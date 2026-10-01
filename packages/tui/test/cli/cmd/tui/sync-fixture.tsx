@@ -65,6 +65,11 @@ export async function mount(override?: FetchHandler, state?: string) {
   ))
 
   await ready
-  await wait(() => sync.status === "complete")
+  try {
+    await wait(() => sync.status === "complete")
+  } catch (error) {
+    app.renderer.destroy()
+    throw error
+  }
   return { app, emit: events.emit, kv, project, sync, session: calls.session }
 }
