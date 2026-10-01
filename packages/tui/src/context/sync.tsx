@@ -28,7 +28,7 @@ import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, onCleanup, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
@@ -106,6 +106,7 @@ export const {
       mcp: {
         [key: string]: McpStatus
       }
+      mcp_loading: boolean
       mcp_resource: {
         [key: string]: McpResource
       }
@@ -138,6 +139,7 @@ export const {
       part: {},
       lsp: [],
       mcp: {},
+      mcp_loading: true,
       mcp_resource: {},
       formatter: [],
       vcs: undefined,
@@ -447,10 +449,14 @@ export const {
 
     const exit = useExit()
     const args = useArgs()
+    let generation = 0
+    onCleanup(() => generation++)
 
     async function bootstrap(input: { fatal?: boolean } = {}) {
+      const current = ++generation
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
+      const active = () => current === generation && workspace === project.workspace.current()
       const projectPromise = project.sync()
       const sessionListPromise = projectPromise.then(() => listSessions())
 
@@ -494,6 +500,7 @@ export const {
             configResponse,
             ...(sessionListResponse ? [sessionListResponse] : []),
           ]).then((responses) => {
+            if (!active()) return
             const providers = responses[0]
             const providerList = responses[1]
             const capabilities = responses[2]
@@ -515,17 +522,33 @@ export const {
           })
         })
         .then(() => {
+          if (!active()) return
           if (store.status !== "complete") setStore("status", "partial")
+          setStore("mcp_loading", true)
+          const hydration = [
+            sdk.client.command.list({ workspace }, { throwOnError: true }).then((x) => {
+              if (active()) setStore("command", reconcile(x.data ?? []))
+            }),
+            sdk.client.mcp
+              .status({ workspace }, { throwOnError: true })
+              .then((x) => {
+                if (active()) setStore("mcp", reconcile(x.data ?? {}))
+              })
+              .finally(() => {
+                if (active()) setStore("mcp_loading", false)
+              }),
+            sdk.client.experimental.resource.list({ workspace }, { throwOnError: true }).then((x) => {
+              if (active()) setStore("mcp_resource", reconcile(x.data ?? {}))
+            }),
+          ]
+          hydration.forEach((request) => {
+            void request.catch((error) => console.error("tui MCP hydration failed", error))
+          })
           // non-blocking
           void Promise.all([
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
-            sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
             sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
-            sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
-            sdk.client.experimental.resource
-              .list({ workspace })
-              .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
             sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
             sdk.client.session.status({ workspace }).then((x) => {
               setStore("session_status", reconcile(x.data ?? {}))
@@ -533,9 +556,11 @@ export const {
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
-          ]).then(() => {
-            setStore("status", "complete")
-          })
+          ])
+            .then(() => {
+              if (active()) setStore("status", "complete")
+            })
+            .catch((error) => console.error("tui background bootstrap failed", error))
         })
         .catch(async (e) => {
           console.error("tui bootstrap failed", {

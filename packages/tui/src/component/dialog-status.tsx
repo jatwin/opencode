@@ -51,7 +51,16 @@ export function DialogStatus() {
           esc
         </text>
       </box>
-      <Show when={Object.keys(sync.data.mcp).length > 0} fallback={<text fg={theme.text}>No MCP Servers</text>}>
+      <Show
+        when={Object.keys(sync.data.mcp).length > 0}
+        fallback={
+          <text fg={theme.text}>
+            {sync.data.mcp_loading && Object.keys(sync.data.config.mcp ?? {}).length > 0
+              ? "Connecting MCP Servers..."
+              : "No MCP Servers"}
+          </text>
+        }
+      >
         <box>
           <text fg={theme.text}>{Object.keys(sync.data.mcp).length} MCP Servers</text>
           <For each={Object.entries(sync.data.mcp)}>
