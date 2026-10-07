@@ -226,9 +226,20 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
   }
 
+  const seen = new Set<string>()
+  const matches: string[] = []
+  const dirs = new Set<string>()
+  for (const match of state.matches) {
+    const real = yield* fsys.realPath(match).pipe(Effect.orElseSucceed(() => match))
+    if (seen.has(real)) continue
+    seen.add(real)
+    matches.push(match)
+    dirs.add(path.dirname(match))
+  }
+
   return {
-    matches: Array.from(state.matches),
-    dirs: Array.from(state.dirs),
+    matches,
+    dirs: Array.from(dirs),
   }
 })
 

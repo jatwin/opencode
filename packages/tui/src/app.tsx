@@ -239,7 +239,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
       yield* Effect.tryPromise(async () => {
         // Prewarm palette before ThemeProvider mounts so `system` theme avoids a first-paint fallback flash.
         void renderer.getPalette({ size: 16 }).catch(() => undefined)
-        const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
+        // Do not block first paint waiting for the terminal to report its color
+        // scheme: many terminals never answer, which costs the full timeout.
+        // ThemeProvider resolves the real mode from `getPalette`/`themeMode`
+        // right after mount, correcting the initial value if needed.
+        const mode = (renderer.themeMode ?? "dark") as "dark" | "light"
         if (renderer.isDestroyed) return
 
         await render(() => {
@@ -275,7 +279,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                       <TuiStartupProvider
                         value={{
                           initialRoute: process.env.OPENCODE_ROUTE ? JSON.parse(process.env.OPENCODE_ROUTE) : undefined,
-                          skipInitialLoading: Boolean(process.env.OPENCODE_FAST_BOOT),
+                          skipInitialLoading: process.env.OPENCODE_FAST_BOOT !== "0",
                         }}
                       >
                         <ClipboardProvider>
