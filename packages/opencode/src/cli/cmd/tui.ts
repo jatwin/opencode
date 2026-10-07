@@ -269,7 +269,15 @@ export const TuiThreadCommand = cmd({
       try {
         const { Effect } = await import("effect")
         const { run } = await import("../tui/layer")
-        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
+        // The legacy TUI plugin host pulls a large module graph. App only calls
+        // start() after first paint, so import it on demand instead of before render.
+        let legacyHost: Promise<import("@opencode-ai/tui/plugin/runtime").TuiPluginHost> | undefined
+        const loadHost = () =>
+          (legacyHost ??= import("@/plugin/tui/runtime").then((module) => module.createLegacyTuiPluginHost()))
+        const pluginHost: import("@opencode-ai/tui/plugin/runtime").TuiPluginHost = {
+          start: (input) => loadHost().then((host) => host.start(input)),
+          dispose: () => (legacyHost ? legacyHost.then((host) => host.dispose()) : Promise.resolve()),
+        }
         await Effect.runPromise(
           run({
             url: transport.url,
@@ -279,7 +287,7 @@ export const TuiThreadCommand = cmd({
               return [tui, server]
             },
             config,
-            pluginHost: createLegacyTuiPluginHost(),
+            pluginHost,
             directory: cwd,
             fetch: transport.fetch,
             headers: transport.headers,
