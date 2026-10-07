@@ -443,6 +443,38 @@ description: A skill in the .agents/skills directory.
     ),
   )
 
+  it.live("deduplicates a skills directory reachable through a symlink", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const realSkill = path.join(dir, ".agents", "skills", "linked-skill")
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(realSkill, "SKILL.md"),
+              `---
+name: linked-skill
+description: A skill reached through a symlinked skills directory.
+---
+
+# Linked Skill
+`,
+            ),
+          )
+          yield* Effect.promise(() => fs.mkdir(path.join(dir, ".claude"), { recursive: true }))
+          yield* Effect.promise(() =>
+            fs.symlink(path.join(dir, ".agents", "skills"), path.join(dir, ".claude", "skills")),
+          )
+
+          const skill = yield* Skill.Service
+          const list = (yield* skill.all()).filter((s) => s.location !== "<built-in>")
+          expect(list.map((s) => s.name)).toEqual(["linked-skill"])
+          const dirs = (yield* skill.dirs()).filter((item) => item.startsWith(dir))
+          expect(dirs.length).toBe(1)
+        }),
+      { git: true },
+    ),
+  )
+
   itWithoutClaudeCodeSkills.live("skips Claude Code skills when disabled", () =>
     provideTmpdirInstance(
       (dir) =>
