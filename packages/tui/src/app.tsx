@@ -22,6 +22,7 @@ import {
   onCleanup,
   batch,
   Show,
+  type Component,
   on,
 } from "solid-js"
 import { TuiPathsProvider, TuiStartupProvider, TuiTerminalEnvironmentProvider, useTuiStartup } from "./context/runtime"
@@ -41,15 +42,6 @@ import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
 import { useConnected } from "./component/use-connected"
-import { DialogMcp } from "./component/dialog-mcp"
-import { DialogStatus } from "./component/dialog-status"
-import { DialogDebug } from "./component/dialog-debug"
-import { DialogThemeList } from "./component/dialog-theme-list"
-import { DialogHelp } from "./ui/dialog-help"
-import { DialogAgent } from "./component/dialog-agent"
-import { DialogSessionList } from "./component/dialog-session-list"
-import { DialogWorkspaceList } from "./component/dialog-workspace-list"
-import { DialogConsoleOrg } from "./component/dialog-console-org"
 import { ThemeProvider, useTheme } from "./context/theme"
 import { Home } from "./routes/home"
 import { Session } from "./routes/session"
@@ -69,7 +61,6 @@ import { TuiConfigProvider, useTuiConfig, type TuiConfig } from "./config"
 import { createTuiApiAdapters } from "./plugin/adapters"
 import { createTuiApi } from "./plugin/api"
 import { createPluginRuntime, PluginRuntimeProvider, usePluginRuntime, type TuiPluginHost } from "./plugin/runtime"
-import { CommandPaletteDialog } from "./component/command-palette"
 import {
   COMMAND_PALETTE_COMMAND,
   OPENCODE_BASE_MODE,
@@ -391,6 +382,15 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const attention = createTuiAttention({ renderer, config: tuiConfig, kv })
   const clipboard = useClipboard()
 
+  // Dialogs are imported lazily and only mounted when opened, so their module
+  // graphs stay out of the TUI's startup cost.
+  const openDialog = (load: () => Promise<Record<string, unknown>>, name: string) => {
+    void load().then((module) => {
+      const Loaded = module[name] as Component | undefined
+      if (Loaded) dialog.replace(() => <Loaded />)
+    })
+  }
+
   const api = createTuiApi(
     createTuiApiAdapters({
       version: InstallationVersion,
@@ -570,7 +570,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "System",
         hidden: true,
         run: () => {
-          dialog.replace(() => <CommandPaletteDialog />)
+          openDialog(() => import("./component/command-palette"), "CommandPaletteDialog")
         },
       },
       {
@@ -581,7 +581,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "sessions",
         slashAliases: ["resume", "continue"],
         run: () => {
-          dialog.replace(() => <DialogSessionList />)
+          openDialog(() => import("./component/dialog-session-list"), "DialogSessionList")
         },
       },
       {
@@ -620,7 +620,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         hidden: !Flag.OPENCODE_EXPERIMENTAL_WORKSPACES,
         slashName: "workspaces",
         run: () => {
-          dialog.replace(() => <DialogWorkspaceList />)
+          openDialog(() => import("./component/dialog-workspace-list"), "DialogWorkspaceList")
         },
       },
       ...Array.from({ length: 9 }, (_, i) => ({
@@ -686,7 +686,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "Agent",
         slashName: "agents",
         run: () => {
-          dialog.replace(() => <DialogAgent />)
+          openDialog(() => import("./component/dialog-agent"), "DialogAgent")
         },
       },
       {
@@ -695,7 +695,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "Agent",
         slashName: "mcps",
         run: () => {
-          dialog.replace(() => <DialogMcp />)
+          openDialog(() => import("./component/dialog-mcp"), "DialogMcp")
         },
       },
       {
@@ -760,7 +760,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
               slashName: "org",
               slashAliases: ["orgs", "switch-org"],
               run: () => {
-                dialog.replace(() => <DialogConsoleOrg />)
+                openDialog(() => import("./component/dialog-console-org"), "DialogConsoleOrg")
               },
               category: "Provider",
             },
@@ -771,7 +771,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "View status",
         slashName: "status",
         run: () => {
-          dialog.replace(() => <DialogStatus />)
+          openDialog(() => import("./component/dialog-status"), "DialogStatus")
         },
         category: "System",
       },
@@ -780,7 +780,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "View debug info",
         slashName: "debug",
         run: () => {
-          dialog.replace(() => <DialogDebug />)
+          openDialog(() => import("./component/dialog-debug"), "DialogDebug")
         },
         category: "System",
       },
@@ -789,7 +789,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "Switch theme",
         slashName: "themes",
         run: () => {
-          dialog.replace(() => <DialogThemeList />)
+          openDialog(() => import("./component/dialog-theme-list"), "DialogThemeList")
         },
         category: "System",
       },
@@ -817,7 +817,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "Help",
         slashName: "help",
         run: () => {
-          dialog.replace(() => <DialogHelp />)
+          openDialog(() => import("./ui/dialog-help"), "DialogHelp")
         },
         category: "System",
       },
