@@ -89,11 +89,6 @@ type DiscoveryState = {
   dirs: string[]
 }
 
-type ScanState = {
-  matches: Set<string>
-  dirs: Set<string>
-}
-
 export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly require: (name: string) => Effect.Effect<Info, NotFoundError>
@@ -139,13 +134,8 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
   }
 })
 
-const scan = Effect.fnUntraced(function* (
-  state: ScanState,
-  root: string,
-  pattern: string,
-  opts?: { dot?: boolean; scope?: string },
-) {
-  const matches = yield* Effect.tryPromise({
+const scan = Effect.fnUntraced(function* (root: string, pattern: string, opts?: { dot?: boolean; scope?: string }) {
+  return yield* Effect.tryPromise({
     try: () =>
       Glob.scan(pattern, {
         cwd: root,
@@ -162,12 +152,8 @@ const scan = Effect.fnUntraced(function* (
         Effect.as([] as string[]),
       )
     }),
+    Effect.map((matches) => matches.map((match) => ({ match, dir: path.dirname(match) }))),
   )
-
-  for (const match of matches) {
-    state.matches.add(match)
-    state.dirs.add(path.dirname(match))
-  }
 })
 
 const discoverSkills = Effect.fnUntraced(function* (
@@ -180,7 +166,10 @@ const discoverSkills = Effect.fnUntraced(function* (
   directory: string,
   worktree: string,
 ) {
-  const state: ScanState = { matches: new Set(), dirs: new Set() }
+  // Collect every directory that may contain skills, then run the (I/O bound)
+  // glob scans concurrently instead of one at a time. The result order is the
+  // collection order, so first-wins duplicate resolution stays deterministic.
+  const scans: Effect.Effect<{ match: string; dir: string }[]>[] = []
 
   const externalDirs: string[] = []
   if (!disableExternalSkills) {
@@ -190,7 +179,7 @@ const discoverSkills = Effect.fnUntraced(function* (
     for (const dir of externalDirs) {
       const root = path.join(global.home, dir)
       if (!(yield* fsys.isDir(root))) continue
-      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
+      scans.push(scan(root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" }))
     }
 
     const upDirs = yield* fsys
@@ -198,13 +187,13 @@ const discoverSkills = Effect.fnUntraced(function* (
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
     for (const root of upDirs) {
-      yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "project" })
+      scans.push(scan(root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "project" }))
     }
   }
 
   const configDirs = yield* config.directories()
   for (const dir of configDirs) {
-    yield* scan(state, dir, OPENCODE_SKILL_PATTERN)
+    scans.push(scan(dir, OPENCODE_SKILL_PATTERN))
   }
 
   const cfg = yield* config.get()
@@ -216,25 +205,32 @@ const discoverSkills = Effect.fnUntraced(function* (
       continue
     }
 
-    yield* scan(state, dir, SKILL_PATTERN)
+    scans.push(scan(dir, SKILL_PATTERN))
   }
 
   for (const url of cfg.skills?.urls ?? []) {
     const pulledDirs = yield* discovery.pull(url)
     for (const dir of pulledDirs) {
-      yield* scan(state, dir, SKILL_PATTERN)
+      scans.push(scan(dir, SKILL_PATTERN))
     }
   }
+
+  const candidates = (yield* Effect.all(scans, { concurrency: "unbounded" })).flat()
+  const canonical = yield* Effect.forEach(
+    candidates,
+    (item) => fsys.realPath(item.match).pipe(Effect.orElseSucceed(() => item.match)),
+    { concurrency: "unbounded" },
+  )
 
   const seen = new Set<string>()
   const matches: string[] = []
   const dirs = new Set<string>()
-  for (const match of state.matches) {
-    const real = yield* fsys.realPath(match).pipe(Effect.orElseSucceed(() => match))
+  for (let index = 0; index < candidates.length; index++) {
+    const real = canonical[index]
     if (seen.has(real)) continue
     seen.add(real)
-    matches.push(match)
-    dirs.add(path.dirname(match))
+    matches.push(candidates[index].match)
+    dirs.add(candidates[index].dir)
   }
 
   return {
