@@ -1,5 +1,6 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ProviderIcon } from "@opencode/ui/provider-icon"
 import { For, Show } from "solid-js"
+import { providerIconId } from "../lib/provider-icon"
 import { catalogSlug, formatCatalogLabName, type ModelCatalogEntry } from "./model-catalog"
 
 export type ComparisonModelRef = {
@@ -67,10 +68,10 @@ export function ComparisonCardsSection(props: {
         data-section={featured() ? "compare-home-related" : "model-panel"}
         data-variant={!featured() && props.compact ? "compact" : undefined}
       >
-        <p data-slot="section-title">
+        <h2 data-slot="section-title">
           <strong>{props.title ?? "Model Comparisons"}.</strong>{" "}
           <span>{props.description ?? "Compare usage, cost, limits, and features."}</span>
-        </p>
+        </h2>
         <div data-component={featured() ? "compare-home-card-grid" : "comparison-card-grid"}>
           <For each={pairs()}>
             {(pair) => (featured() ? <FeaturedComparisonCard pair={pair} /> : <ComparisonPanelCard pair={pair} />)}
@@ -160,11 +161,4 @@ function ComparisonLabLogo(props: { model: ComparisonModelRef }) {
 
 function modelKey(model: ComparisonModelRef) {
   return `${catalogSlug(model.lab)}/${catalogSlug(model.slug)}`
-}
-
-function providerIconId(provider: string) {
-  const id = provider.toLowerCase().replace(/[^a-z0-9]+/g, "")
-  if (id === "moonshot") return "moonshotai"
-  if (id === "zhipu") return "zhipuai"
-  return id
 }

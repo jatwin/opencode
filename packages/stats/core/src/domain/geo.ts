@@ -9,7 +9,6 @@ import {
   collapseRows,
   DATA_SITE_TIERS,
   inserted,
-  isMissingUniqueUsersColumn,
   omitUniqueUsers,
   rankRowsWithMarketShare,
   statPeriodKey,
@@ -17,7 +16,9 @@ import {
   synthesizeAllTierRows,
   toStatBaseRow,
   UPSERT_CHUNK_SIZE,
+  withUniqueUsersFallback,
   type StatBaseAggregate,
+  type StatPeriodScope,
 } from "./stat"
 
 export type GeoStatRow = typeof geoStat.$inferInsert
@@ -55,7 +56,10 @@ export declare namespace GeoStatRepo {
       readonly model?: string
     }) => Effect.Effect<GeoStatRow[], DatabaseError>
     readonly upsert: (rows: GeoStatRow[]) => Effect.Effect<void, DatabaseError>
-    readonly deleteRetiredDimensions: (rows: GeoStatRow[]) => Effect.Effect<void, DatabaseError>
+    readonly deleteRetiredDimensions: (
+      scope: StatPeriodScope,
+      hiddenModels: readonly string[],
+    ) => Effect.Effect<void, DatabaseError>
     readonly deleteUnknownDimensions: (rows: GeoStatRow[]) => Effect.Effect<void, DatabaseError>
   }
 }
@@ -140,14 +144,7 @@ export class GeoStatRepo extends Context.Service<GeoStatRepo, GeoStatRepo.Servic
           chunks(rows, UPSERT_CHUNK_SIZE),
           (chunk) =>
             Effect.tryPromise({
-              try: async () => {
-                try {
-                  return await upsertGeoChunk(chunk, true)
-                } catch (cause) {
-                  if (!isMissingUniqueUsersColumn(cause)) throw cause
-                  return upsertGeoChunk(chunk, false)
-                }
-              },
+              try: () => withUniqueUsersFallback((includeUniqueUsers) => upsertGeoChunk(chunk, includeUniqueUsers)),
               catch: (cause) => DatabaseError.make({ cause }),
             }),
           { discard: true },
@@ -193,24 +190,24 @@ export class GeoStatRepo extends Context.Service<GeoStatRepo, GeoStatRepo.Servic
           })
       }
 
-      const deleteRetiredDimensions = Effect.fn("GeoStatRepo.deleteRetiredDimensions")(function* (rows: GeoStatRow[]) {
-        const scope = statRowScope(rows)
-        if (!scope) return
-
+      const deleteRetiredDimensions = Effect.fn("GeoStatRepo.deleteRetiredDimensions")(function* (
+        scope: StatPeriodScope,
+        hiddenModels: readonly string[],
+      ) {
         yield* Effect.tryPromise({
           try: () =>
             db
               .delete(geoStat)
               .where(
                 and(
-                  inArray(geoStat.grain, scope.grains),
-                  inArray(geoStat.period_key, scope.periodKeys),
-                  inArray(geoStat.dataset, scope.datasets),
-                  inArray(geoStat.client, scope.clients),
-                  inArray(geoStat.source, scope.sources),
+                  eq(geoStat.grain, scope.grain),
+                  eq(geoStat.period_key, scope.periodKey),
+                  eq(geoStat.dataset, scope.dataset),
+                  eq(geoStat.client, "all"),
+                  eq(geoStat.source, "all"),
                   or(
                     inArray(geoStat.provider, RETIRED_STAT_PROVIDERS),
-                    inArray(geoStat.model, RETIRED_STAT_MODELS),
+                    inArray(geoStat.model, [...RETIRED_STAT_MODELS, ...hiddenModels]),
                     and(eq(geoStat.provider, "unknown"), eq(geoStat.model, "hy4-preview")),
                   ),
                 ),

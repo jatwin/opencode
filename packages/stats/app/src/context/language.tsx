@@ -1,7 +1,7 @@
 import { createEffect } from "solid-js"
 import { getRequestEvent } from "solid-js/web"
 import { createStore } from "solid-js/store"
-import { createSimpleContext } from "@opencode-ai/ui/context"
+import { createSimpleContext } from "@opencode/ui/context"
 import {
   LOCALES,
   cookie,
@@ -49,6 +49,8 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       document.documentElement.lang = tag(store.locale)
       document.documentElement.dir = dir(store.locale)
       document.documentElement.dataset.locale = store.locale
+      // Remember a language picked by URL, so unprefixed /data links redirect back to it.
+      if (fromPathname(window.location.pathname)) document.cookie = cookie(store.locale)
     })
 
     return {
