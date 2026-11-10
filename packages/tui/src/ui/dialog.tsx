@@ -9,6 +9,7 @@ import {
   onCleanup,
   Show,
   useContext,
+  type Component,
   type JSX,
   type ParentProps,
 } from "solid-js"
@@ -31,6 +32,32 @@ export function dialogWidth(size: DialogSize) {
   if (size === "xlarge") return 116
   if (size === "large") return 88
   return 60
+}
+
+/**
+ * Wraps a dialog that is imported on demand so its module graph stays off the
+ * startup path (see app.tsx). Solid's `lazy` renders an empty text placeholder
+ * while the module loads, and OpenTUI rejects that placeholder because a text
+ * node cannot sit directly inside a dialog box. Gate on the import instead and
+ * render a real `<text>` placeholder until the component is ready.
+ */
+export function lazyDialog<T extends Component<any>>(load: () => Promise<{ default: T }>): T {
+  const [component, setComponent] = createSignal<T>()
+  let started = false
+  return ((props: Record<string, unknown>) => {
+    if (!started) {
+      started = true
+      void load().then((module) => setComponent(() => module.default))
+    }
+    return (
+      <Show when={component()} fallback={<text>Loading…</text>}>
+        {(loaded) => {
+          const Dialog = loaded()
+          return <Dialog {...props} />
+        }}
+      </Show>
+    )
+  }) as unknown as T
 }
 
 export function Dialog(

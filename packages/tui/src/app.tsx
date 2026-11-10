@@ -33,7 +33,6 @@ import {
   onCleanup,
   batch,
   Show,
-  lazy,
 } from "solid-js"
 import {
   TuiLifecycleProvider,
@@ -47,7 +46,7 @@ import {
   useTuiTerminalEnvironment,
   type TuiApp,
 } from "./context/runtime"
-import { DialogProvider, useDialog } from "./ui/dialog"
+import { DialogProvider, lazyDialog, useDialog } from "./ui/dialog"
 import { DialogIntegration } from "./component/dialog-integration"
 import { ErrorComponent } from "./component/error-component"
 import { PluginRouteMissing } from "./component/plugin-route-missing"
@@ -108,20 +107,26 @@ import { SessionFrame } from "./component/session-frame"
 import { createTuiClipboard } from "./clipboard"
 
 // Load command dialogs only when opened, keeping them off the first-paint path.
-const DialogMcp = lazy(() => import("./component/dialog-mcp").then((module) => ({ default: module.DialogMcp })))
-const DialogStatus = lazy(() =>
+const DialogMcp = lazyDialog(() =>
+  import("./component/dialog-mcp").then((module) => ({ default: module.DialogMcp })),
+)
+const DialogStatus = lazyDialog(() =>
   import("./component/dialog-status").then((module) => ({ default: module.DialogStatus })),
 )
-const DialogDebug = lazy(() => import("./component/dialog-debug").then((module) => ({ default: module.DialogDebug })))
-const DialogThemeList = lazy(() =>
+const DialogDebug = lazyDialog(() =>
+  import("./component/dialog-debug").then((module) => ({ default: module.DialogDebug })),
+)
+const DialogThemeList = lazyDialog(() =>
   import("./component/dialog-theme-list").then((module) => ({ default: module.DialogThemeList })),
 )
-const DialogHelp = lazy(() => import("./ui/dialog-help").then((module) => ({ default: module.DialogHelp })))
-const DialogAgent = lazy(() => import("./component/dialog-agent").then((module) => ({ default: module.DialogAgent })))
-const DialogSessionList = lazy(() =>
+const DialogHelp = lazyDialog(() => import("./ui/dialog-help").then((module) => ({ default: module.DialogHelp })))
+const DialogAgent = lazyDialog(() =>
+  import("./component/dialog-agent").then((module) => ({ default: module.DialogAgent })),
+)
+const DialogSessionList = lazyDialog(() =>
   import("./component/dialog-session-list").then((module) => ({ default: module.DialogSessionList })),
 )
-const CommandPaletteDialog = lazy(() =>
+const CommandPaletteDialog = lazyDialog(() =>
   import("./component/command-palette").then((module) => ({ default: module.CommandPaletteDialog })),
 )
 
